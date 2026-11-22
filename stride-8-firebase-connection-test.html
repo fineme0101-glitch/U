@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>STRIDE 8 — Firebase Connection Test</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #101820; color: #f3f6f8; padding: 24px 16px; }
+    main { max-width: 680px; margin: 0 auto; }
+    h1 { margin-bottom: 6px; }
+    p { color: #b9c5ce; line-height: 1.5; }
+    .card { background: #1b2731; border: 1px solid #354653; border-radius: 14px; padding: 16px; margin: 14px 0; }
+    .status { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid #354653; }
+    .status:last-child { border-bottom: 0; }
+    .pending { color: #f6c85f; } .ok { color: #64d69a; } .bad { color: #ff8585; }
+    button { background: #e34b55; color: white; border: 0; border-radius: 10px; padding: 12px 16px; font-weight: 700; font-size: 15px; }
+    code { overflow-wrap: anywhere; color: #a8d8ff; }
+    #uid { overflow-wrap: anywhere; }
+    small { color: #aebbc5; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>STRIDE 8 — Firebase Test</h1>
+  <p>This page checks Firebase initialization, anonymous sign-in, and Realtime Database connectivity separately. It does not write data or change security rules.</p>
+
+  <section class="card">
+    <div class="status"><span>Firebase initialization</span><strong id="init" class="pending">Checking…</strong></div>
+    <div class="status"><span>Anonymous authentication</span><strong id="auth" class="pending">Waiting…</strong></div>
+    <div class="status"><span>Player UID</span><code id="uid">—</code></div>
+    <div class="status"><span>Realtime Database network</span><strong id="network" class="pending">Waiting…</strong></div>
+    <div class="status"><span>Read permission for /rooms</span><strong id="read" class="pending">Not tested</strong></div>
+  </section>
+
+  <section class="card">
+    <p id="detail">Starting test…</p>
+    <button id="retry" type="button">Retry authentication</button>
+    <p><small>Expected at this stage: Authentication succeeds; database network status may connect; reading /rooms may be denied because your database rules are currently locked. That denial is not proof that the network is offline.</small></p>
+  </section>
+</main>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+  import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-database.js";
+
+  const config = {
+    apiKey: "AIzaSyDub_MnqFIvLhNntGUj174ortIkaBvFQtQ",
+    authDomain: "stride-8.firebaseapp.com",
+    databaseURL: "https://stride-8-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "stride-8",
+    storageBucket: "stride-8.firebasestorage.app",
+    messagingSenderId: "72544968390",
+    appId: "1:72544968390:web:0d0e6e98527944cf1481c7",
+    measurementId: "G-KW86F23KG2"
+  };
+
+  const el = id => document.getElementById(id);
+  const set = (id, text, cls) => { el(id).textContent = text; el(id).className = cls; };
+  let auth, db;
+
+  try {
+    const app = initializeApp(config);
+    auth = getAuth(app);
+    db = getDatabase(app);
+    set("init", "Initialized", "ok");
+    el("detail").textContent = "Firebase SDK initialized. Checking authentication and database connection…";
+  } catch (e) {
+    set("init", "Failed", "bad");
+    el("detail").textContent = "Initialization error: " + e.message;
+  }
+
+  if (db) {
+    onValue(ref(db, ".info/connected"), snap => {
+      const connected = snap.val() === true;
+      set("network", connected ? "Connected" : "Disconnected", connected ? "ok" : "bad");
+    }, err => {
+      set("network", "Error: " + err.message, "bad");
+    });
+
+    onValue(ref(db, "rooms"), () => {
+      set("read", "Read allowed", "ok");
+    }, err => {
+      set("read", "Denied / error", "bad");
+      el("detail").textContent = "Database network status is reported separately above. Reading /rooms was denied or failed: " + err.message + ". This is expected while rules remain locked.";
+    }, { onlyOnce: true });
+  }
+
+  async function login() {
+    if (!auth) return;
+    set("auth", "Signing in…", "pending");
+    try {
+      const result = await signInAnonymously(auth);
+      set("auth", "Success", "ok");
+      el("uid").textContent = result.user.uid;
+      el("detail").textContent = "Anonymous sign-in succeeded. Check the database network line separately. A read denial for /rooms is expected while rules are locked.";
+    } catch (e) {
+      set("auth", "Failed", "bad");
+      el("detail").textContent = "Authentication error: " + e.code + " — " + e.message + ". Check that Anonymous sign-in is enabled in Firebase Authentication.";
+    }
+  }
+
+  el("retry").addEventListener("click", login);
+  if (auth) {
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        set("auth", "Success", "ok");
+        el("uid").textContent = user.uid;
+      }
+    });
+    login();
+  }
+</script>
+</body>
+</html>
